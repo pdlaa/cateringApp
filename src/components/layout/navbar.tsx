@@ -2,21 +2,68 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
-import { Menu, X, ShoppingBag, User } from "lucide-react"
+import { Menu, X, ShoppingBag, User, LogOut } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { createClient } from "@/lib/supabase-client"
 
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [userName, setUserName] = useState("")
+  const router = useRouter()
+  const supabase = createClient()
 
   useEffect(() => {
     const handleScroll = () => {
       setScrolled(window.scrollY > 50)
     }
     window.addEventListener("scroll", handleScroll)
+    checkAuth()
     return () => window.removeEventListener("scroll", handleScroll)
   }, [])
+
+  const checkAuth = async () => {
+  const { data } = await supabase.auth.getSession()
+  const session = data?.session
+  
+  if (session && session.user.email) {
+    setIsLoggedIn(true)
+    const userEmail = session.user.email
+    
+    // Get user name from users table
+    const { data: userData } = await supabase
+      .from("users")
+      .select("name")
+      .eq("email", userEmail)
+      .single()
+    
+    if (userData?.name) {
+      setUserName(userData.name)
+    } else {
+      // Get from pelanggans table
+      const { data: pelangganData } = await supabase
+        .from("pelanggans")
+        .select("name_pelanggan")
+        .eq("email", userEmail)
+        .single()
+      
+      if (pelangganData?.name_pelanggan) {
+        setUserName(pelangganData.name_pelanggan)
+      }
+    }
+  }
+}
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    setIsLoggedIn(false)
+    setUserName("")
+    router.push("/")
+    router.refresh()
+  }
 
   return (
     <>
@@ -62,23 +109,43 @@ export function Navbar() {
               ))}
             </nav>
 
-            {/* CTA Buttons */}
+            {/* CTA Buttons - Conditional */}
             <div className="hidden md:flex items-center gap-3">
-              <Button variant="ghost" size="sm" asChild>
-                <Link href="/login" className="flex items-center gap-2">
-                  <User className="w-4 h-4" />
-                  Masuk
-                </Link>
-              </Button>
-              <Button 
-                size="sm" 
-                asChild
-                className="bg-primary-500 hover:bg-primary-600 text-cream-100"
-              >
-                <Link href="/register">
-                  Pesan Sekarang
-                </Link>
-              </Button>
+              {isLoggedIn ? (
+                <>
+                  <div className="flex items-center gap-2 px-3 py-1 text-sm text-charcoal-900 dark:text-cream-100">
+                    <User className="w-4 h-4" />
+                    <span className="font-medium">{userName || "User"}</span>
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={handleLogout}
+                    className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                  >
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Keluar
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button variant="ghost" size="sm" asChild>
+                    <Link href="/login" className="flex items-center gap-2">
+                      <User className="w-4 h-4" />
+                      Masuk
+                    </Link>
+                  </Button>
+                  <Button 
+                    size="sm" 
+                    asChild
+                    className="bg-primary-500 hover:bg-primary-600 text-cream-100"
+                  >
+                    <Link href="/register">
+                      Pesan Sekarang
+                    </Link>
+                  </Button>
+                </>
+              )}
             </div>
 
             {/* Mobile Menu Button */}
@@ -123,17 +190,39 @@ export function Navbar() {
                   </Link>
                 </motion.div>
               ))}
+              
+              {/* Mobile Auth Buttons - Conditional */}
               <div className="flex flex-col gap-4 mt-8 w-full max-w-xs">
-                <Button variant="outline" size="lg" asChild>
-                  <Link href="/login">Masuk</Link>
-                </Button>
-                <Button 
-                  size="lg" 
-                  asChild
-                  className="bg-primary-500 hover:bg-primary-600 text-cream-100"
-                >
-                  <Link href="/register">Pesan Sekarang</Link>
-                </Button>
+                {isLoggedIn ? (
+                  <>
+                    <div className="flex items-center gap-2 justify-center mb-4 text-charcoal-900 dark:text-cream-100">
+                      <User className="w-5 h-5" />
+                      <span className="font-medium">{userName || "User"}</span>
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      size="lg" 
+                      onClick={handleLogout}
+                      className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                    >
+                      <LogOut className="w-4 h-4 mr-2" />
+                      Keluar
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button variant="outline" size="lg" asChild>
+                      <Link href="/login" onClick={() => setMobileMenuOpen(false)}>Masuk</Link>
+                    </Button>
+                    <Button 
+                      size="lg" 
+                      asChild
+                      className="bg-primary-500 hover:bg-primary-600 text-cream-100"
+                    >
+                      <Link href="/register" onClick={() => setMobileMenuOpen(false)}>Pesan Sekarang</Link>
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           </motion.div>
