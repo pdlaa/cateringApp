@@ -1,46 +1,74 @@
 "use client"
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { useEffect, useState } from "react"
 import { createClient } from "@/lib/supabase-client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Badge } from "@/components/ui/badge"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { toast } from "sonner"
-import { ArrowLeft, Upload, Package, Image as ImageIcon, CheckCircle2, X } from "lucide-react"
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import Link from "next/link"
-import { motion } from "framer-motion"
+import { Plus, Package, Pencil, Trash2, Loader2, X } from "lucide-react"
+import { toast } from "sonner"
 
-// ✅ Type definitions sesuai database ENUM
 type PaketJenis = "Prasmanan" | "Box"
 type PaketKategori = "Pernikahan" | "Selamatan" | "Ulang Tahun" | "Studi Tour" | "Rapat"
 
-interface PaketInput {
+type Paket = {
+  id: number
   nama_paket: string
   jenis_enum: PaketJenis
   kategori_enum: PaketKategori
   jumlah_pax: number
   harga_paket: number
-  deskripsi: string
+  deskripsi: string | null
   foto1: string | null
   foto2: string | null
   foto3: string | null
 }
 
-export default function CreatePaketPage() {
-  const router = useRouter()
-  const [loading, setLoading] = useState(false)
+export default function PaketListPage() {
+  const [pakets, setPakets] = useState<Paket[]>([])
+  const [loading, setLoading] = useState(true)
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [editingPaket, setEditingPaket] = useState<Paket | null>(null)
+  const [updating, setUpdating] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [fotoPreviews, setFotoPreviews] = useState<(string | null)[]>([null, null, null])
+  
   const supabase = createClient()
+
+  useEffect(() => {
+    fetchPakets()
+  }, [])
+
+  const fetchPakets = async () => {
+    const { data, error } = await supabase
+      .from("pakets")
+      .select("*")
+      .order("created_at", { ascending: false })
+
+    if (error) {
+      toast.error("Gagal memuat paket")
+    } else {
+      setPakets(data || [])
+    }
+    setLoading(false)
+  }
+
+  const handleEdit = (paket: Paket) => {
+    setEditingPaket(paket)
+    setFotoPreviews([paket.foto1, paket.foto2, paket.foto3])
+    setEditDialogOpen(true)
+  }
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, index: number) => {
     const file = e.target.files?.[0]
@@ -69,7 +97,6 @@ export default function CreatePaketPage() {
         .getPublicUrl(filePath)
 
       const publicUrl = data.publicUrl
-
       const newPreviews = [...fotoPreviews]
       newPreviews[index] = publicUrl
       setFotoPreviews(newPreviews)
@@ -89,13 +116,14 @@ export default function CreatePaketPage() {
     setFotoPreviews(newPreviews)
   }
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleUpdate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    setLoading(true)
+    if (!editingPaket) return
+
+    setUpdating(true)
 
     const formData = new FormData(e.currentTarget)
-    
-    const data: PaketInput = {
+    const  PaketData = {
       nama_paket: formData.get("nama_paket") as string,
       jenis_enum: formData.get("jenis_enum") as PaketJenis,
       kategori_enum: formData.get("kategori_enum") as PaketKategori,
@@ -105,339 +133,301 @@ export default function CreatePaketPage() {
       foto1: fotoPreviews[0],
       foto2: fotoPreviews[1],
       foto3: fotoPreviews[2],
+      updated_at: new Date().toISOString(),
     }
 
     try {
-      const { error } = await supabase.from("pakets").insert(data)
+      const { error } = await supabase
+        .from("pakets")
+        .update(PaketData)
+        .eq("id", editingPaket.id)
+
       if (error) throw error
-      toast.success("🎉 Paket berhasil ditambahkan!")
-      router.push("/admin/paket")
+      toast.success("Paket berhasil diupdate")
+      setEditDialogOpen(false)
+      fetchPakets()
     } catch (error) {
-      console.error("Error creating paket:", error)
-      toast.error("Gagal menambahkan paket")
+      console.error("Error updating paket:", error)
+      toast.error("Gagal mengupdate paket")
     } finally {
-      setLoading(false)
+      setUpdating(false)
+    }
+  }
+
+  const handleDelete = async (id: number) => {
+    if (!confirm("Yakin ingin menghapus paket ini?")) return
+
+    const { error } = await supabase.from("pakets").delete().eq("id", id)
+    if (error) {
+      toast.error("Gagal menghapus paket")
+    } else {
+      toast.success("Paket berhasil dihapus")
+      fetchPakets()
     }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-cream-50 via-white to-terracotta-50 dark:from-charcoal-900 dark:via-charcoal-900 dark:to-charcoal-800 py-8 px-4">
-      <div className="max-w-5xl mx-auto">
-        {/* Header Section */}
-        <motion.div 
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
-        >
-          <Link 
-            href="/admin/paket" 
-            className="inline-flex items-center gap-2 text-gray-600 hover:text-primary-600 dark:text-gray-300 dark:hover:text-primary-400 transition-colors mb-4 group"
-          >
-            <div className="p-2 rounded-full bg-white dark:bg-gray-800 shadow-sm group-hover:shadow-md transition-shadow">
-              <ArrowLeft className="w-4 h-4" />
-            </div>
-            <span className="font-medium">Kembali ke Daftar Paket</span>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Kelola Paket</h1>
+          <p className="text-gray-500 mt-1">Daftar semua paket catering yang tersedia</p>
+        </div>
+        <Button asChild className="bg-green-600 hover:bg-green-700">
+          <Link href="/admin/paket/create" className="flex items-center gap-2">
+            <Plus className="w-4 h-4" />
+            Tambah Paket
           </Link>
-          
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-gradient-to-br from-primary-500 to-primary-600 rounded-2xl shadow-lg">
-              <Package className="w-8 h-8 text-white" />
-            </div>
-            <div>
-              <h1 className="text-4xl font-bold bg-gradient-to-r from-primary-600 to-terracotta-600 bg-clip-text text-transparent">
-                Tambah Paket Baru
-              </h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-1">
-                Lengkapi informasi paket catering di bawah ini
-              </p>
-            </div>
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-12">
+          <Package className="w-12 h-12 mx-auto text-gray-400 animate-pulse" />
+          <p className="text-gray-500 mt-2">Memuat paket...</p>
+        </div>
+      ) : pakets.length === 0 ? (
+        <div className="bg-white rounded-xl border p-12 text-center">
+          <Package className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+          <h3 className="text-xl font-bold mb-2">Belum Ada Paket</h3>
+          <p className="text-gray-500 mb-6">Mulai tambahkan paket catering pertama Anda</p>
+          <Button asChild>
+            <Link href="/admin/paket/create">Tambah Paket Pertama</Link>
+          </Button>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nama Paket</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Jenis</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Kategori</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pax</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Harga</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Aksi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {pakets.map((paket) => (
+                  <tr key={paket.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 font-medium">{paket.nama_paket}</td>
+                    <td className="px-6 py-4">
+                      <Badge variant="outline">{paket.jenis_enum}</Badge>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{paket.kategori_enum}</td>
+                    <td className="px-6 py-4 text-sm">{paket.jumlah_pax} porsi</td>
+                    <td className="px-6 py-4 font-medium">Rp {paket.harga_paket.toLocaleString("id-ID")}</td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleEdit(paket)}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleDelete(paket.id)}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </motion.div>
+        </div>
+      )}
 
-        <form onSubmit={handleSubmit} className="space-y-8">
-          {/* Section 1: Informasi Dasar */}
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl rounded-3xl shadow-xl border border-white/20 dark:border-gray-700/50 overflow-hidden"
-          >
-            <div className="bg-gradient-to-r from-primary-500/10 to-terracotta-500/10 px-8 py-4 border-b border-gray-200 dark:border-gray-700">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-primary-500 rounded-lg">
-                  <Package className="w-5 h-5 text-white" />
-                </div>
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                  Informasi Dasar
-                </h2>
-              </div>
-            </div>
+      {/* Edit Dialog Modal */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-2xl flex items-center gap-2">
+              <Package className="w-6 h-6 text-green-600" />
+              Edit Paket
+            </DialogTitle>
+            <DialogDescription>
+              Update informasi paket catering
+            </DialogDescription>
+          </DialogHeader>
 
-            <div className="p-8 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {editingPaket && (
+            <form onSubmit={handleUpdate} className="space-y-6">
+              <div className="space-y-4">
                 {/* Nama Paket */}
-                <div className="md:col-span-2 space-y-2">
-                  <Label htmlFor="nama_paket" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Nama Paket <span className="text-red-500">*</span>
-                  </Label>
+                <div>
+                  <Label>Nama Paket *</Label>
                   <Input 
-                    id="nama_paket" 
                     name="nama_paket" 
+                    defaultValue={editingPaket.nama_paket}
                     required 
-                    placeholder="Contoh: Paket Pernikahan Premium Gold" 
-                    className="h-12 px-4 rounded-xl border-2 border-gray-200 dark:border-gray-600 focus:border-primary-500 dark:focus:border-primary-400 transition-all bg-white/50 dark:bg-gray-700/50"
+                    className="mt-1" 
                   />
                 </div>
 
-                {/* Jenis Paket */}
-                <div className="space-y-2">
-                  <Label htmlFor="jenis_enum" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Jenis Paket <span className="text-red-500">*</span>
-                  </Label>
-                  <Select name="jenis_enum" required>
-                    <SelectTrigger className="h-12 rounded-xl border-2 border-gray-200 dark:border-gray-600 focus:border-primary-500 dark:focus:border-primary-400 transition-all bg-white/50 dark:bg-gray-700/50">
-                      <SelectValue placeholder="Pilih jenis paket" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Prasmanan">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 bg-primary-500 rounded-full"></span>
-                          Prasmanan
+                {/* Jenis & Kategori */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Jenis Paket *</Label>
+                    <div className="grid grid-cols-2 gap-2 mt-1">
+                      <label className="cursor-pointer">
+                        <input 
+                          type="radio" 
+                          name="jenis_enum" 
+                          value="Prasmanan" 
+                          defaultChecked={editingPaket.jenis_enum === "Prasmanan"}
+                          required 
+                          className="peer sr-only" 
+                        />
+                        <div className="p-3 border-2 border-gray-200 rounded-lg text-center peer-checked:border-green-500 peer-checked:bg-green-50 transition-all">
+                          <div className="font-medium text-sm">Prasmanan</div>
                         </div>
-                      </SelectItem>
-                      <SelectItem value="Box">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 bg-terracotta-500 rounded-full"></span>
-                          Box
+                      </label>
+                      <label className="cursor-pointer">
+                        <input 
+                          type="radio" 
+                          name="jenis_enum" 
+                          value="Box" 
+                          defaultChecked={editingPaket.jenis_enum === "Box"}
+                          required 
+                          className="peer sr-only" 
+                        />
+                        <div className="p-3 border-2 border-gray-200 rounded-lg text-center peer-checked:border-green-500 peer-checked:bg-green-50 transition-all">
+                          <div className="font-medium text-sm">Box</div>
                         </div>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Kategori */}
-                <div className="space-y-2">
-                  <Label htmlFor="kategori_enum" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Kategori <span className="text-red-500">*</span>
-                  </Label>
-                  <Select name="kategori_enum" required>
-                    <SelectTrigger className="h-12 rounded-xl border-2 border-gray-200 dark:border-gray-600 focus:border-primary-500 dark:focus:border-primary-400 transition-all bg-white/50 dark:bg-gray-700/50">
-                      <SelectValue placeholder="Pilih kategori" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Pernikahan">🎊 Pernikahan</SelectItem>
-                      <SelectItem value="Selamatan">🙏 Selamatan</SelectItem>
-                      <SelectItem value="Ulang Tahun">🎂 Ulang Tahun</SelectItem>
-                      <SelectItem value="Studi Tour">🚌 Studi Tour</SelectItem>
-                      <SelectItem value="Rapat">💼 Rapat</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Jumlah Pax */}
-                <div className="space-y-2">
-                  <Label htmlFor="jumlah_pax" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Jumlah Pax (Porsi) <span className="text-red-500">*</span>
-                  </Label>
-                  <div className="relative">
-                    <Input 
-                      id="jumlah_pax" 
-                      name="jumlah_pax" 
-                      type="number" 
-                      required 
-                      placeholder="100" 
-                      min="1"
-                      className="h-12 pl-4 pr-12 rounded-xl border-2 border-gray-200 dark:border-gray-600 focus:border-primary-500 dark:focus:border-primary-400 transition-all bg-white/50 dark:bg-gray-700/50"
-                    />
-                    <div className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">
-                      porsi
+                      </label>
                     </div>
+                  </div>
+
+                  <div>
+                    <Label>Kategori *</Label>
+                    <select 
+                      name="kategori_enum" 
+                      defaultValue={editingPaket.kategori_enum}
+                      required
+                      className="w-full mt-1 p-2 border rounded-md"
+                    >
+                      <option value="Pernikahan">Pernikahan</option>
+                      <option value="Selamatan">Selamatan</option>
+                      <option value="Ulang Tahun">Ulang Tahun</option>
+                      <option value="Studi Tour">Studi Tour</option>
+                      <option value="Rapat">Rapat</option>
+                    </select>
                   </div>
                 </div>
 
-                {/* Harga Paket */}
-                <div className="space-y-2">
-                  <Label htmlFor="harga_paket" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Harga Paket (Rp) <span className="text-red-500">*</span>
-                  </Label>
-                  <div className="relative">
+                {/* Pax & Harga */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Jumlah Pax *</Label>
                     <Input 
-                      id="harga_paket" 
+                      name="jumlah_pax" 
+                      type="number" 
+                      defaultValue={editingPaket.jumlah_pax}
+                      required 
+                      min="1"
+                      className="mt-1" 
+                    />
+                  </div>
+                  <div>
+                    <Label>Harga (Rp) *</Label>
+                    <Input 
                       name="harga_paket" 
                       type="number" 
+                      defaultValue={editingPaket.harga_paket}
                       required 
-                      placeholder="150000" 
                       min="0"
-                      className="h-12 pl-4 pr-16 rounded-xl border-2 border-gray-200 dark:border-gray-600 focus:border-primary-500 dark:focus:border-primary-400 transition-all bg-white/50 dark:bg-gray-700/50"
+                      className="mt-1" 
                     />
-                    <div className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">
-                      IDR
-                    </div>
                   </div>
                 </div>
 
                 {/* Deskripsi */}
-                <div className="md:col-span-2 space-y-2">
-                  <Label htmlFor="deskripsi" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Deskripsi Paket
-                  </Label>
+                <div>
+                  <Label>Deskripsi</Label>
                   <Textarea 
-                    id="deskripsi" 
                     name="deskripsi" 
-                    placeholder="Deskripsikan detail paket, menu yang termasuk, fasilitas, dan keunggulan paket ini..." 
-                    rows={5}
-                    className="rounded-xl border-2 border-gray-200 dark:border-gray-600 focus:border-primary-500 dark:focus:border-primary-400 transition-all resize-none bg-white/50 dark:bg-gray-700/50"
+                    defaultValue={editingPaket.deskripsi || ""}
+                    rows={3}
+                    className="mt-1" 
                   />
                 </div>
-              </div>
-            </div>
-          </motion.div>
 
-          {/* Section 2: Upload Foto */}
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl rounded-3xl shadow-xl border border-white/20 dark:border-gray-700/50 overflow-hidden"
-          >
-            <div className="bg-gradient-to-r from-terracotta-500/10 to-primary-500/10 px-8 py-4 border-b border-gray-200 dark:border-gray-700">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-terracotta-500 rounded-lg">
-                  <ImageIcon className="w-5 h-5 text-white" />
-                </div>
+                {/* Upload Foto */}
                 <div>
-                  <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                    Upload Foto Paket
-                  </h2>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Tambahkan foto menarik untuk mempromosikan paket Anda
-                  </p>
+                  <Label>Foto Paket</Label>
+                  <div className="grid grid-cols-3 gap-3 mt-1">
+                    {[0, 1, 2].map((index) => (
+                      <div key={index} className="relative aspect-square rounded-lg border-2 border-dashed border-gray-300 overflow-hidden">
+                        {fotoPreviews[index] ? (
+                          <>
+                            <img 
+                              src={fotoPreviews[index]} 
+                              alt={`Foto ${index + 1}`}
+                              className="w-full h-full object-cover"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeFoto(index)}
+                              className="absolute top-1 right-1 p-1 bg-red-500 rounded-full text-white hover:bg-red-600"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </>
+                        ) : (
+                          <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                            <span className="text-xs">Foto {index + 1}</span>
+                          </div>
+                        )}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="absolute inset-0 opacity-0 cursor-pointer"
+                          onChange={(e) => handleFileChange(e, index)}
+                          disabled={uploading}
+                        />
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="p-8">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {[0, 1, 2].map((index) => (
-                  <motion.div 
-                    key={index}
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: 0.3 + (index * 0.1) }}
-                    className="space-y-3"
-                  >
-                    <div className="flex items-center justify-between">
-                      <Label className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                        Foto {index + 1}
-                      </Label>
-                      {index === 0 && (
-                        <span className="text-xs text-primary-600 dark:text-primary-400 font-medium">
-                          (Wajib)
-                        </span>
-                      )}
-                    </div>
-                    
-                    <div className="relative group">
-                      {fotoPreviews[index] ? (
-                        <motion.div 
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          className="relative rounded-2xl overflow-hidden border-2 border-primary-500/30 dark:border-primary-400/30 shadow-lg"
-                        >
-                          <img 
-                            src={fotoPreviews[index]} 
-                            alt={`Preview ${index + 1}`}
-                            className="w-full h-48 object-cover"
-                          />
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-                            <div className="absolute bottom-0 left-0 right-0 p-3">
-                              <Button
-                                type="button"
-                                variant="destructive"
-                                size="sm"
-                                onClick={() => removeFoto(index)}
-                                className="w-full bg-red-500/90 hover:bg-red-600 text-white"
-                              >
-                                <X className="w-4 h-4 mr-2" />
-                                Hapus Foto
-                              </Button>
-                            </div>
-                          </div>
-                          <div className="absolute top-2 right-2">
-                            <div className="p-1.5 bg-green-500 rounded-full shadow-lg">
-                              <CheckCircle2 className="w-4 h-4 text-white" />
-                            </div>
-                          </div>
-                        </motion.div>
-                      ) : (
-                        <div 
-                          onClick={() => document.getElementById(`foto${index + 1}`)?.click()}
-                          className="relative cursor-pointer group/upload"
-                        >
-                          <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-2xl p-8 text-center hover:border-primary-500 dark:hover:border-primary-400 hover:bg-primary-50/50 dark:hover:bg-primary-900/20 transition-all duration-300">
-                            <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-gradient-to-br from-primary-100 to-terracotta-100 dark:from-primary-900/50 dark:to-terracotta-900/50 flex items-center justify-center group-hover/upload:scale-110 transition-transform">
-                              <Upload className="w-7 h-7 text-primary-600 dark:text-primary-400" />
-                            </div>
-                            <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                              {uploading ? "Uploading..." : "Klik untuk upload"}
-                            </p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">
-                              Max 5MB (JPG, PNG)
-                            </p>
-                          </div>
-                          <input
-                            id={`foto${index + 1}`}
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={(e) => handleFileChange(e, index)}
-                            disabled={uploading}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            </div>
-          </motion.div>
-
-          {/* Action Buttons */}
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-            className="flex gap-4 justify-end pt-4"
-          >
-            <Button 
-              type="button" 
-              variant="outline" 
-              onClick={() => router.back()}
-              disabled={loading || uploading}
-              className="px-8 py-6 rounded-xl border-2 font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50"
-            >
-              Batal
-            </Button>
-            <Button 
-              type="submit" 
-              disabled={loading || uploading}
-              className="px-8 py-6 rounded-xl bg-gradient-to-r from-primary-500 to-terracotta-500 hover:from-primary-600 hover:to-terracotta-600 text-white font-bold shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105 transition-all"
-            >
-              {loading ? (
-                <div className="flex items-center gap-2">
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Menyimpan...</span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-5 h-5" />
-                  <span>Simpan Paket</span>
-                </div>
-              )}
-            </Button>
-          </motion.div>
-        </form>
-      </div>
+              <DialogFooter>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setEditDialogOpen(false)}
+                  disabled={updating || uploading}
+                >
+                  Batal
+                </Button>
+                <Button 
+                  type="submit" 
+                  disabled={updating || uploading}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  {updating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Menyimpan...
+                    </>
+                  ) : (
+                    "Update Paket"
+                  )}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
